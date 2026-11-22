@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: beliebrick-presence
+    runtime: docker
+    plan: free
+    healthCheckPath: /room.php
+    envVars:
+      - key: ALLOWED_ORIGINS
+        sync: false
