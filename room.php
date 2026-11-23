@@ -20,6 +20,7 @@ if(!$leave){
 $prefix="<?php exit; ?>\n";$lock=fopen(__DIR__.'/.shared-lock.php','c+');if(!$lock||!flock($lock,LOCK_EX))reply(503,['ok'=>false,'error'=>'storage_not_writable']);if(fstat($lock)['size']===0){fwrite($lock,$prefix);fflush($lock);}
 $file=__DIR__.'/.shared-room.php';$state=['peers'=>[],'bots'=>[],'leader'=>'','lease'=>0,'revision'=>0,'botSeen'=>0];if(is_file($file)){$decoded=json_decode(substr(file_get_contents($file),strlen($prefix)),true);if(is_array($decoded)&&isset($decoded['peers']))$state=$decoded;}
 foreach($state['peers'] as $id=>$p)if($now-$p['seen']>30)unset($state['peers'][$id]);
+$enteringShowroom=!$leave&&$room==='A'&&($state['peers'][$key]['room']??null)!=='A';
 if($leave){if(isset($state['peers'][$key])&&$state['peers'][$key]['room']===$room)unset($state['peers'][$key]);}
 else{if(!isset($state['peers'][$key])&&count($state['peers'])>=50){flock($lock,LOCK_UN);fclose($lock);reply(503,['ok'=>false,'error'=>'room_full']);}$state['peers'][$key]=['id'=>substr($key,0,20),'name'=>$in['name'],'x'=>(float)$in['x'],'y'=>(float)$in['y'],'z'=>(float)$in['z'],'yaw'=>fmod((float)$in['yaw'],M_PI*2),'moving'=>!empty($in['moving']),'jump'=>max(0,min(1000000000,(int)($in['jump']??0))),'jumpBase'=>max(0,min(3,(float)($in['jumpBase']??0))),'room'=>$room,'active'=>!isset($in['active'])||!!$in['active'],'seen'=>$now,'version'=>(int)($in['protocol']??2),'jumpSession'=>is_string($in['jumpSession']??null)&&preg_match('/^[0-9a-f-]{36}$/D',$in['jumpSession'])?$in['jumpSession']:null];}
 $leader=$state['leader'];
@@ -42,6 +43,45 @@ if($isLeader){
    $bots[array_key_last($bots)]['roomVisit']=['room'=>$visit['room'],'start'=>(float)$visit['start'],'end'=>(float)$visit['end']];
  }}$state['bots']=$bots;$state['revision']++;$state['botSeen']=$now;}}
 if($state['leader']===''&&count($state['peers'])===0&&$now-$state['botSeen']>30)$state['bots']=array_values(array_filter($state['bots'],fn($bot)=>($bot['roomVisit']['end']??0)>$now));
+// Keep this assigned identity in the showroom even across a hall leader handoff.
+$guest=$state['showroomGuest']??null;
+if($guest&&$guest['end']<=$now){
+ unset($state['showroomGuest']);
+ foreach($state['bots'] as &$bot){
+  if($bot['name']===$guest['name']&&($bot['roomVisit']['start']??null)===$guest['start'])unset($bot['roomVisit']);
+ }
+ unset($bot);
+ $guest=null;
+}
+if($enteringShowroom&&!$guest){
+ $nearest=null;$distance=INF;$occupied=false;
+ foreach($state['bots'] as $i=>$bot){
+  $visit=$bot['roomVisit']??null;
+  if($visit&&$visit['end']>$now){if($visit['room']==='A')$occupied=true;continue;}
+  $d=hypot($bot['x']-13.8,$bot['z']+2.3);
+  if($d<$distance){$nearest=$i;$distance=$d;}
+ }
+ if(!$occupied){
+  if($nearest===null&&count($state['bots'])<50){
+   $names=array_column($state['bots'],'name');
+   for($serial=701;in_array('Arlo'.$serial,$names,true);$serial++){}
+   $nearest=count($state['bots']);
+   $state['bots'][]=['name'=>'Arlo'.$serial,'x'=>13.8,'y'=>0,'z'=>-2.3,'yaw'=>0,'moving'=>false];
+  }
+  if($nearest!==null){
+   $guest=['name'=>$state['bots'][$nearest]['name'],'room'=>'A','start'=>$now,'end'=>$now+52];
+   $state['showroomGuest']=$guest;
+  }
+ }
+}
+if($guest){
+ $index=array_search($guest['name'],array_column($state['bots'],'name'),true);
+ if($index!==false||count($state['bots'])<50){
+  if($index===false)$index=count($state['bots']);
+  $state['bots'][$index]=['name'=>$guest['name'],'x'=>13.8,'y'=>0,'z'=>-2.3,'yaw'=>0,'moving'=>false,
+   'roomVisit'=>['room'=>'A','start'=>$guest['start'],'end'=>$guest['end']]];
+ }
+}
 $ok=file_put_contents($file,$prefix.json_encode($state))!==false;$peers=[];foreach($state['peers'] as $id=>$p)if($id!==$key){unset($p['seen']);$peers[]=$p;}
 // One identity and one assignment, shared by all clients in the assigned room.
 $roomBots=[];
