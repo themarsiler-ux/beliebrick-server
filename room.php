@@ -41,7 +41,7 @@ if($isLeader){
   &&$visit['start']<=$now+2&&$visit['end']>$now&&$visit['end']-$visit['start']>=30&&$visit['end']-$visit['start']<=65){
    $bots[array_key_last($bots)]['roomVisit']=['room'=>$visit['room'],'start'=>(float)$visit['start'],'end'=>(float)$visit['end']];
  }}$state['bots']=$bots;$state['revision']++;$state['botSeen']=$now;}}
-if($state['leader']===''&&$now-$state['botSeen']>30)$state['bots']=array_values(array_filter($state['bots'],fn($bot)=>($bot['roomVisit']['end']??0)>$now));
+if($state['leader']===''&&count($state['peers'])===0&&$now-$state['botSeen']>30)$state['bots']=array_values(array_filter($state['bots'],fn($bot)=>($bot['roomVisit']['end']??0)>$now));
 $ok=file_put_contents($file,$prefix.json_encode($state))!==false;$peers=[];foreach($state['peers'] as $id=>$p)if($id!==$key){unset($p['seen']);$peers[]=$p;}
 // One identity and one assignment, shared by all clients in the assigned room.
 $roomBots=[];
